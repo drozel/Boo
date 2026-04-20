@@ -1,0 +1,25 @@
+version: '3'
+
+vars:
+  IMAGE: boo:local
+  CONTAINER: boo
+  VOLUME: boo-data
+  PORT: 8181
+
+tasks:
+  build:
+    desc: Build the Docker image
+    cmds:
+      - docker build -t {{.IMAGE}} .
+
+  run:
+    desc: Run the container locally with a named volume
+    deps: [build]
+    cmds:
+      - docker rm -f {{.CONTAINER}} 2>/dev/null || true
+      - docker run
+          --name {{.CONTAINER}}
+          -p {{.PORT}}:8080
+          -v {{.VOLUME}}:/data
+          {{.IMAGE}}
+      - echo "Boo running at http://localhost:{{.PORT}}"
