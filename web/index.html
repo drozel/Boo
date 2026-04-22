@@ -37,9 +37,13 @@
         <span class="brand-tag">resource calendar</span>
       </div>
       <div class="nav">
-        <button id="prev" class="icon-btn" aria-label="Previous week"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+        <button id="prev" class="icon-btn" aria-label="Previous"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
         <button id="today" class="chip-btn"><svg class="icon"><use href="#i-today"/></svg><span>Today</span></button>
-        <button id="next" class="icon-btn" aria-label="Next week"><svg class="icon"><use href="#i-chevron-right"/></svg></button>
+        <button id="next" class="icon-btn" aria-label="Next"><svg class="icon"><use href="#i-chevron-right"/></svg></button>
+        <div class="mode-switch" role="tablist" aria-label="View mode">
+          <button id="mode-day" class="mode-btn" role="tab" aria-pressed="false">Day</button>
+          <button id="mode-week" class="mode-btn" role="tab" aria-pressed="true">Week</button>
+        </div>
         <span id="range-label" class="range-label"></span>
       </div>
       <div class="who">

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.bmad-method.org)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:8080/)"
+    ]
+  }
+}

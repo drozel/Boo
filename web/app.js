@@ -1,10 +1,15 @@
 // Boo — resource availability calendar (vanilla ES module)
 
-const DAYS_VISIBLE = 14;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const SNAP_MIN = 30;
 const SNAP_MS = SNAP_MIN * 60 * 1000;
+
+const MODES = {
+  day: { days: 1, minHourWidth: 32 },
+  week: { days: 7, minHourWidth: 3 },
+};
+const DEFAULT_MODE = "week";
 
 const PALETTE = [
   "#6366f1", "#8b5cf6", "#ec4899", "#ef4444", "#f59e0b",
@@ -15,10 +20,13 @@ const ICONS = [
   "phone", "car", "camera", "bolt", "user",
 ];
 
+const initialMode = MODES[localStorage.getItem("booMode")] ? localStorage.getItem("booMode") : DEFAULT_MODE;
+
 const state = {
   resources: [],
   bookings: [],
-  viewStart: startOfDay(Date.now() - 2 * DAY_MS),
+  mode: initialMode,
+  viewStart: initialMode === "week" ? startOfWeek(Date.now()) : startOfDay(Date.now()),
   user: localStorage.getItem("booUser") || "",
   editingResourceId: null,
   editingBookingId: null,
@@ -30,6 +38,13 @@ const state = {
 function startOfDay(ts) {
   const d = new Date(ts);
   d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+function startOfWeek(ts) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  const offset = (d.getDay() + 6) % 7; // Monday = 0
+  d.setDate(d.getDate() - offset);
   return d.getTime();
 }
 function addDays(ts, n) { return ts + n * DAY_MS; }
@@ -50,7 +65,17 @@ function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 function hourWidth() {
   return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hour-width")) || 6;
 }
-function viewEnd() { return addDays(state.viewStart, DAYS_VISIBLE); }
+function daysVisible() { return MODES[state.mode].days; }
+function viewEnd() { return addDays(state.viewStart, daysVisible()); }
+
+function updateHourWidth() {
+  const tl = document.getElementById("timeline");
+  if (!tl || !tl.clientWidth) return;
+  const { days, minHourWidth } = MODES[state.mode];
+  const natural = tl.clientWidth / (days * 24);
+  const hw = Math.max(minHourWidth, natural);
+  document.documentElement.style.setProperty("--hour-width", `${hw}px`);
+}
 
 function toast(msg) {
   const t = document.getElementById("toast");
@@ -94,6 +119,8 @@ async function loadState() {
 // ---------- rendering ----------
 
 function render() {
+  document.body.dataset.mode = state.mode;
+  updateHourWidth();
   renderRangeLabel();
   renderResources();
   renderTimeline();
@@ -102,7 +129,8 @@ function render() {
 function renderRangeLabel() {
   const start = state.viewStart;
   const end = viewEnd() - DAY_MS;
-  document.getElementById("range-label").textContent = `${fmtDate(start)} – ${fmtDate(end)}`;
+  const label = document.getElementById("range-label");
+  label.textContent = daysVisible() === 1 ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
 }
 
 function renderResources() {
@@ -147,24 +175,30 @@ function renderTimeline() {
   empty.classList.add("hidden");
 
   const today = startOfDay(Date.now());
+  const days = daysVisible();
 
-  for (let i = 0; i < DAYS_VISIBLE; i++) {
+  for (let i = 0; i < days; i++) {
     const dayTs = addDays(state.viewStart, i);
     const d = new Date(dayTs);
     const div = document.createElement("div");
     div.className = "day-head";
     if (d.getDay() === 0 || d.getDay() === 6) div.classList.add("weekend");
     if (dayTs === today) div.classList.add("today");
+    const hours = Array.from({ length: 24 }, (_, h) =>
+      `<span class="hour-label">${String(h).padStart(2, "0")}</span>`
+    ).join("");
     div.innerHTML = `
-      <span class="dow">${d.toLocaleDateString(undefined, { weekday: "short" })}</span>
-      <span class="dom">${d.getDate()}</span>
-      <span class="mon muted">${d.toLocaleDateString(undefined, { month: "short" })}</span>
-      <span class="hour-marks"></span>
+      <div class="day-label">
+        <span class="dow">${d.toLocaleDateString(undefined, { weekday: "short" })}</span>
+        <span class="dom">${d.getDate()}</span>
+        <span class="mon muted">${d.toLocaleDateString(undefined, { month: "short" })}</span>
+      </div>
+      <div class="day-hours">${hours}</div>
     `;
     header.appendChild(div);
   }
 
-  const totalHours = DAYS_VISIBLE * 24;
+  const totalHours = days * 24;
   const totalWidth = totalHours * hourWidth();
 
   for (const res of state.resources) {
@@ -502,17 +536,41 @@ function init() {
 
   // Nav
   document.getElementById("prev").addEventListener("click", () => {
-    state.viewStart = addDays(state.viewStart, -7);
+    state.viewStart = addDays(state.viewStart, -daysVisible());
     render();
   });
   document.getElementById("next").addEventListener("click", () => {
-    state.viewStart = addDays(state.viewStart, 7);
+    state.viewStart = addDays(state.viewStart, daysVisible());
     render();
   });
   document.getElementById("today").addEventListener("click", () => {
-    state.viewStart = startOfDay(Date.now() - 2 * DAY_MS);
+    state.viewStart = state.mode === "week" ? startOfWeek(Date.now()) : startOfDay(Date.now());
     render();
     scrollToNow();
+  });
+
+  // Mode switch
+  const setMode = (mode) => {
+    if (!MODES[mode] || mode === state.mode) return;
+    state.mode = mode;
+    localStorage.setItem("booMode", mode);
+    state.viewStart = mode === "week" ? startOfWeek(state.viewStart) : startOfDay(state.viewStart);
+    updateModeButtons();
+    render();
+  };
+  const updateModeButtons = () => {
+    for (const m of Object.keys(MODES)) {
+      const btn = document.getElementById(`mode-${m}`);
+      if (btn) btn.setAttribute("aria-pressed", String(state.mode === m));
+    }
+  };
+  for (const m of Object.keys(MODES)) {
+    document.getElementById(`mode-${m}`)?.addEventListener("click", () => setMode(m));
+  }
+  updateModeButtons();
+
+  window.addEventListener("resize", () => {
+    updateHourWidth();
   });
 
   // Who
