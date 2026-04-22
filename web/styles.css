@@ -433,8 +433,7 @@ body[data-mode="week"] .row-grid {
   background: var(--card);
   color: var(--fg);
   box-shadow: var(--shadow-lg);
-  width: fit-content;
-  max-width: min(440px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
 }
 .dialog::backdrop { background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); }
@@ -446,7 +445,7 @@ body[data-mode="week"] .row-grid {
 .dialog-body { padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 14px; }
 .dialog-body h3 { margin: 0; font-size: 18px; }
 
-.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--fg-muted); }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--fg-muted); min-width: 0; }
 .field > span { font-weight: 500; }
 .field em { font-style: normal; font-size: 11px; opacity: 0.7; margin-left: 4px; }
 .field input,
@@ -458,6 +457,8 @@ body[data-mode="week"] .row-grid {
   border-radius: var(--radius-sm);
   padding: 9px 12px;
   transition: border-color 120ms, box-shadow 120ms;
+  width: 100%;
+  min-width: 0;
 }
 .field input:focus,
 .field textarea:focus {
