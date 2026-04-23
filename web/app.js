@@ -141,12 +141,19 @@ function renderResources() {
     li.className = "resource-item";
     li.dataset.id = r.id;
     li.dataset.name = r.name;
+    const swatchHTML = (r.icon && r.icon.startsWith("/"))
+      ? `<img src="${escapeHtml(r.icon)}" class="resource-picture" alt="">`
+      : `<span class="swatch" style="background:${r.color}">${iconHTML(r.icon)}</span>`;
+    const linkCount = (r.links || []).length;
+    const linkClass = linkCount ? "link-hint has-links" : "link-hint";
+    const linkTitle = linkCount ? `${linkCount} link${linkCount === 1 ? "" : "s"}` : "No links — click to add";
     li.innerHTML = `
-      <span class="swatch" style="background:${r.color}"><svg class="icon"><use href="#i-${r.icon}"/></svg></span>
+      ${swatchHTML}
       <span class="meta">
         <span class="name"></span>
         <span class="desc"></span>
       </span>
+      <span class="${linkClass}" title="${linkTitle}" aria-hidden="true"><svg class="icon"><use href="#i-link"/></svg></span>
       <button class="icon-btn ghost edit" aria-label="Edit resource"><svg class="icon"><use href="#i-pencil"/></svg></button>
     `;
     li.querySelector(".name").textContent = r.name;
@@ -155,7 +162,10 @@ function renderResources() {
       e.stopPropagation();
       openResourceDialog(r);
     });
-    li.addEventListener("click", () => openResourceDialog(r));
+    li.addEventListener("click", (e) => {
+      if (e.target.closest(".edit")) return;
+      openLinkPopover(r, li);
+    });
     list.appendChild(li);
   }
 }
@@ -208,6 +218,32 @@ function renderTimeline() {
     row.style.width = `${totalWidth}px`;
     row.style.setProperty("--c", res.color);
     row.innerHTML = `<div class="row-grid"></div><div class="row-surface"></div>`;
+
+    const surface = row.querySelector(".row-surface");
+    if (state.mode === "week") {
+      for (let i = 0; i < days; i++) {
+        const dow = new Date(addDays(state.viewStart, i)).getDay();
+        if (dow === 0 || dow === 6) {
+          const col = document.createElement("div");
+          col.className = "weekend-col";
+          col.style.left = `calc(var(--hour-width) * ${i * 24})`;
+          col.style.width = `calc(var(--hour-width) * 24)`;
+          surface.before(col);
+        }
+      }
+    } else if (state.mode === "day") {
+      const WORK_START = 9, WORK_END = 18;
+      const morning = document.createElement("div");
+      morning.className = "offhours-col";
+      morning.style.left = "0";
+      morning.style.width = `calc(var(--hour-width) * ${WORK_START})`;
+      surface.before(morning);
+      const evening = document.createElement("div");
+      evening.className = "offhours-col";
+      evening.style.left = `calc(var(--hour-width) * ${WORK_END})`;
+      evening.style.width = `calc(var(--hour-width) * ${24 - WORK_END})`;
+      surface.before(evening);
+    }
 
     const bookings = state.bookings.filter((b) => b.resourceId === res.id);
     for (const b of bookings) {
@@ -353,7 +389,7 @@ function openBookingDialog({ booking, resourceId, start, end } = {}) {
 
   title.textContent = isEdit ? "Edit booking" : "New booking";
   delBtn.hidden = !isEdit;
-  badge.innerHTML = `<span class="swatch" style="background:${res.color}"><svg class="icon"><use href="#i-${res.icon}"/></svg></span><span>${escapeHtml(res.name)}</span>`;
+  badge.innerHTML = `<span class="swatch" style="background:${res.color}">${iconHTML(res.icon)}</span><span>${escapeHtml(res.name)}</span>`;
   badge.dataset.resourceId = res.id;
 
   form.user.value = isEdit ? booking.user : state.user;
@@ -381,9 +417,122 @@ function openResourceDialog(resource) {
 
   renderSwatches(resource ? resource.color : PALETTE[0]);
   renderIconPicker(resource ? resource.icon : ICONS[0]);
-
+  renderLinkRows(resource ? (resource.links || []) : []);
   dialog.showModal();
   setTimeout(() => form.name.focus(), 40);
+}
+
+function renderLinkRows(links) {
+  const ul = document.getElementById("link-rows");
+  ul.innerHTML = "";
+  for (const l of links) addLinkRow(l.url, l.text);
+}
+
+function addLinkRow(url = "", text = "") {
+  const ul = document.getElementById("link-rows");
+  const li = document.createElement("li");
+  li.className = "link-row";
+  li.innerHTML = `
+    <input class="link-text" placeholder="Label" maxlength="80" />
+    <input class="link-url" type="text" placeholder="https://…" maxlength="500" />
+    <button type="button" class="icon-btn ghost link-remove" aria-label="Remove link">
+      <svg class="icon"><use href="#i-trash"/></svg>
+    </button>
+  `;
+  li.querySelector(".link-text").value = text;
+  li.querySelector(".link-url").value = url;
+  li.querySelector(".link-remove").addEventListener("click", () => li.remove());
+  ul.appendChild(li);
+}
+
+function getLinkRows() {
+  const rows = document.querySelectorAll("#link-rows .link-row");
+  const out = [];
+  for (const row of rows) {
+    const url = row.querySelector(".link-url").value.trim();
+    const text = row.querySelector(".link-text").value.trim();
+    if (!url && !text) continue;
+    out.push({ url, text });
+  }
+  return out;
+}
+
+// ---------- link popover ----------
+
+function openLinkPopover(resource, anchor) {
+  closeLinkPopover();
+  const pop = document.getElementById("link-popover");
+  pop.innerHTML = "";
+  const links = resource.links || [];
+
+  if (!links.length) {
+    const empty = document.createElement("div");
+    empty.className = "link-empty";
+    empty.textContent = "No links configured.";
+    pop.appendChild(empty);
+    const hint = document.createElement("button");
+    hint.type = "button";
+    hint.className = "link-edit-hint";
+    hint.innerHTML = `<svg class="icon"><use href="#i-pencil"/></svg><span>Edit resource</span>`;
+    hint.addEventListener("click", () => { closeLinkPopover(); openResourceDialog(resource); });
+    pop.appendChild(hint);
+  } else {
+    for (const l of links) {
+      const a = document.createElement("a");
+      a.className = "link-item";
+      a.href = l.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = l.text || l.url;
+      a.title = l.url;
+      a.addEventListener("click", () => closeLinkPopover());
+      pop.appendChild(a);
+    }
+  }
+
+  pop.hidden = false;
+  positionPopover(pop, anchor);
+
+  // Close handlers
+  const onDocClick = (e) => {
+    if (!pop.contains(e.target) && !anchor.contains(e.target)) closeLinkPopover();
+  };
+  const onKey = (e) => { if (e.key === "Escape") closeLinkPopover(); };
+  const onScroll = () => closeLinkPopover();
+  setTimeout(() => {
+    document.addEventListener("click", onDocClick);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScroll);
+    document.querySelector(".resource-list")?.addEventListener("scroll", onScroll);
+    pop._cleanup = () => {
+      document.removeEventListener("click", onDocClick);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScroll);
+      document.querySelector(".resource-list")?.removeEventListener("scroll", onScroll);
+    };
+  }, 0);
+}
+
+function positionPopover(pop, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  pop.style.left = "0px";
+  pop.style.top = "0px";
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  let left = rect.right + 8;
+  if (left + pw > window.innerWidth - 8) left = Math.max(8, rect.left - pw - 8);
+  let top = rect.top;
+  if (top + ph > window.innerHeight - 8) top = Math.max(8, window.innerHeight - ph - 8);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+}
+
+function closeLinkPopover() {
+  const pop = document.getElementById("link-popover");
+  if (pop.hidden) return;
+  pop.hidden = true;
+  pop.innerHTML = "";
+  if (pop._cleanup) { pop._cleanup(); pop._cleanup = null; }
 }
 
 function renderSwatches(selected) {
@@ -407,17 +556,35 @@ function renderIconPicker(selected) {
   const el = document.getElementById("icon-picker");
   el.innerHTML = "";
   el.dataset.selected = selected;
+  const isCustom = selected && selected.startsWith("/");
   for (const icon of ICONS) {
     const b = document.createElement("button");
     b.type = "button";
-    b.setAttribute("aria-pressed", String(icon === selected));
+    b.setAttribute("aria-pressed", String(!isCustom && icon === selected));
     b.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg>`;
     b.addEventListener("click", () => {
       el.dataset.selected = icon;
       el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      // clear any pending upload
+      const input = document.getElementById("icon-upload");
+      const preview = document.getElementById("icon-upload-preview");
+      input.value = "";
+      preview.hidden = true;
     });
     el.appendChild(b);
   }
+
+  // Show current custom icon in the preview slot
+  const preview = document.getElementById("icon-upload-preview");
+  if (isCustom) {
+    preview.src = selected;
+    preview.hidden = false;
+  } else {
+    preview.hidden = true;
+    preview.src = "";
+  }
+  // Reset file input
+  document.getElementById("icon-upload").value = "";
 }
 
 // ---------- co-booker chips ----------
@@ -446,6 +613,13 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function iconHTML(icon, cls = "icon") {
+  if (icon && icon.startsWith("/")) {
+    return `<img src="${escapeHtml(icon)}" class="${cls} icon-img" alt="">`;
+  }
+  return `<svg class="${cls}"><use href="#i-${escapeHtml(icon)}"/></svg>`;
+}
+
 // ---------- form submission ----------
 
 async function submitResource(e) {
@@ -453,18 +627,31 @@ async function submitResource(e) {
   const form = e.target;
   const color = document.getElementById("color-swatches").dataset.selected;
   const icon = document.getElementById("icon-picker").dataset.selected;
+  const iconFile = document.getElementById("icon-upload").files[0];
   const body = {
     name: form.name.value.trim(),
     description: form.description.value.trim(),
     color, icon,
+    links: getLinkRows(),
   };
   try {
+    let resource;
     if (state.editingResourceId) {
-      await api("PATCH", `/api/resources/${state.editingResourceId}`, body);
+      resource = await api("PATCH", `/api/resources/${state.editingResourceId}`, body);
       toast("Resource updated");
     } else {
-      await api("POST", "/api/resources", body);
+      resource = await api("POST", "/api/resources", body);
       toast("Resource added");
+    }
+    if (iconFile) {
+      const fd = new FormData();
+      fd.append("file", iconFile);
+      const r = await fetch(`/api/resources/${resource.id}/icon`, { method: "POST", body: fd });
+      if (!r.ok) {
+        let msg = "Icon upload failed";
+        try { msg = (await r.json()).error || msg; } catch {}
+        toast(msg);
+      }
     }
     document.getElementById("resource-dialog").close();
     await loadState();
@@ -535,14 +722,8 @@ function init() {
   document.getElementById("who-name").textContent = state.user || "Set name";
 
   // Nav
-  document.getElementById("prev").addEventListener("click", () => {
-    state.viewStart = addDays(state.viewStart, -daysVisible());
-    render();
-  });
-  document.getElementById("next").addEventListener("click", () => {
-    state.viewStart = addDays(state.viewStart, daysVisible());
-    render();
-  });
+  document.getElementById("prev").addEventListener("click", () => navigate(-1));
+  document.getElementById("next").addEventListener("click", () => navigate(1));
   document.getElementById("today").addEventListener("click", () => {
     state.viewStart = state.mode === "week" ? startOfWeek(Date.now()) : startOfDay(Date.now());
     render();
@@ -554,7 +735,13 @@ function init() {
     if (!MODES[mode] || mode === state.mode) return;
     state.mode = mode;
     localStorage.setItem("booMode", mode);
-    state.viewStart = mode === "week" ? startOfWeek(state.viewStart) : startOfDay(state.viewStart);
+    if (mode === "week") {
+      state.viewStart = startOfWeek(state.viewStart);
+    } else {
+      const today = startOfDay(Date.now());
+      const weekEnd = addDays(state.viewStart, 7);
+      state.viewStart = today >= state.viewStart && today < weekEnd ? today : startOfDay(state.viewStart);
+    }
     updateModeButtons();
     render();
   };
@@ -595,11 +782,25 @@ function init() {
     }
   });
 
+  // Icon upload preview
+  document.getElementById("icon-upload").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    const preview = document.getElementById("icon-upload-preview");
+    const picker = document.getElementById("icon-picker");
+    if (!file) { preview.hidden = true; return; }
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    preview.hidden = false;
+    // deselect all predefined icon buttons
+    picker.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", "false"));
+  });
+
   // Resources
   document.getElementById("add-resource").addEventListener("click", () => openResourceDialog(null));
   document.getElementById("empty-add").addEventListener("click", () => openResourceDialog(null));
   document.getElementById("resource-form").addEventListener("submit", submitResource);
   document.getElementById("resource-delete").addEventListener("click", deleteResource);
+  document.getElementById("link-add").addEventListener("click", () => addLinkRow());
 
   // Bookings
   document.getElementById("booking-form").addEventListener("submit", submitBooking);
@@ -648,6 +849,31 @@ function init() {
     const nowOffset = (Date.now() - state.viewStart) / HOUR_MS * hourWidth();
     line.style.left = `${nowOffset}px`;
   }, 60_000);
+}
+
+let navAnimating = false;
+async function navigate(direction) {
+  if (navAnimating) return;
+  navAnimating = true;
+  const header = document.getElementById("timeline-header");
+  const body = document.getElementById("timeline-body");
+  const dx = direction > 0 ? -48 : 48;
+
+  const outOpts = { duration: 140, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" };
+  const outKf = [{ transform: "translateX(0)", opacity: 1 }, { transform: `translateX(${dx}px)`, opacity: 0 }];
+  const outAnims = [header.animate(outKf, outOpts), body.animate(outKf, outOpts)];
+  await Promise.all(outAnims.map((a) => a.finished));
+
+  state.viewStart = addDays(state.viewStart, direction * daysVisible());
+  render();
+
+  const inOpts = { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" };
+  const inKf = [{ transform: `translateX(${-dx}px)`, opacity: 0 }, { transform: "translateX(0)", opacity: 1 }];
+  const inAnims = [header.animate(inKf, inOpts), body.animate(inKf, inOpts)];
+  await Promise.all(inAnims.map((a) => a.finished));
+
+  outAnims.forEach((a) => a.cancel());
+  navAnimating = false;
 }
 
 function scrollToNow() {

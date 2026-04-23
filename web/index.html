@@ -27,6 +27,7 @@
         <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 14l2-6h12l2 6v5H4v-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="18" r="1.6" fill="currentColor"/><circle cx="16" cy="18" r="1.6" fill="currentColor"/></symbol>
         <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h4l1.5-2h5L16 8h4v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
         <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1.5 1.5M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1.5-1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       </defs>
     </svg>
 
@@ -114,6 +115,21 @@
         <div class="field">
           <span>Icon</span>
           <div class="icon-picker" id="icon-picker"></div>
+          <div class="icon-upload-row">
+            <span class="muted">or</span>
+            <label class="icon-upload-label">
+              <input type="file" id="icon-upload" accept="image/png" />
+              <span>Upload PNG</span>
+            </label>
+            <img id="icon-upload-preview" class="icon-upload-preview" alt="" hidden />
+          </div>
+        </div>
+        <div class="field">
+          <span>Links <em class="muted">optional</em></span>
+          <ul id="link-rows" class="link-rows"></ul>
+          <button type="button" class="chip-btn ghost link-add" id="link-add">
+            <svg class="icon"><use href="#i-plus"/></svg><span>Add link</span>
+          </button>
         </div>
         <div class="dialog-actions">
           <button type="button" class="chip-btn danger" id="resource-delete" hidden><svg class="icon"><use href="#i-trash"/></svg><span>Delete</span></button>
@@ -163,6 +179,8 @@
         </div>
       </form>
     </dialog>
+
+    <div id="link-popover" class="link-popover" role="menu" hidden></div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 

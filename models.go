@@ -8,12 +8,18 @@ import (
 	"time"
 )
 
+type ResourceLink struct {
+	URL  string `json:"url"`
+	Text string `json:"text"`
+}
+
 type Resource struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Color       string `json:"color"`
-	Icon        string `json:"icon"`
-	Description string `json:"description,omitempty"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Color       string         `json:"color"`
+	Icon        string         `json:"icon"`
+	Description string         `json:"description,omitempty"`
+	Links       []ResourceLink `json:"links,omitempty"`
 }
 
 type Booking struct {
@@ -61,6 +67,25 @@ func (r *Resource) validate() error {
 	if r.Icon == "" {
 		r.Icon = "server"
 	}
+	cleaned := make([]ResourceLink, 0, len(r.Links))
+	for _, l := range r.Links {
+		url := strings.TrimSpace(l.URL)
+		text := strings.TrimSpace(l.Text)
+		if url == "" && text == "" {
+			continue
+		}
+		if url == "" {
+			return errors.New("link url is required")
+		}
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "/") {
+			url = "https://" + url
+		}
+		if text == "" {
+			text = url
+		}
+		cleaned = append(cleaned, ResourceLink{URL: url, Text: text})
+	}
+	r.Links = cleaned
 	return nil
 }
 
@@ -77,6 +102,8 @@ func (b *Booking) validate() error {
 	if !b.End.After(b.Start) {
 		return errors.New("end must be after start")
 	}
+	b.Start = b.Start.UTC()
+	b.End = b.End.UTC()
 	b.User = strings.TrimSpace(b.User)
 	b.CoBookers = normalizeCoBookers(b.User, b.CoBookers)
 	return nil

@@ -4,10 +4,12 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -39,6 +41,8 @@ func mapStoreError(err error) int {
 	}
 }
 
+const iconSize = 32
+
 func main() {
 	port := getenv("PORT", "8080")
 	dataFile := getenv("DATA_FILE", "./data/data.json")
@@ -46,6 +50,11 @@ func main() {
 	store, err := NewStore(dataFile)
 	if err != nil {
 		log.Fatalf("store init failed: %v", err)
+	}
+
+	uploadsDir := filepath.Join(filepath.Dir(dataFile), "icons")
+	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
+		log.Fatalf("uploads dir: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -89,7 +98,51 @@ func main() {
 			writeErr(w, mapStoreError(err), err.Error())
 			return
 		}
+		os.Remove(filepath.Join(uploadsDir, id+".png"))
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /api/resources/{id}/icon", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if err := r.ParseMultipartForm(5 << 20); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid multipart form")
+			return
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "file field required")
+			return
+		}
+		defer file.Close()
+
+		src, err := png.Decode(file)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid PNG")
+			return
+		}
+
+		resized := resizePNG(src, iconSize, iconSize)
+
+		iconPath := filepath.Join(uploadsDir, id+".png")
+		f, err := os.Create(iconPath)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to save icon")
+			return
+		}
+		if encErr := png.Encode(f, resized); encErr != nil {
+			f.Close()
+			writeErr(w, http.StatusInternalServerError, "failed to encode icon")
+			return
+		}
+		f.Close()
+
+		iconURL := "/uploads/" + id + ".png"
+		updated, err := store.UpdateResource(id, Resource{Icon: iconURL})
+		if err != nil {
+			writeErr(w, mapStoreError(err), err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
 	})
 
 	mux.HandleFunc("POST /api/bookings", func(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +181,15 @@ func main() {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("/uploads/", func(w http.ResponseWriter, r *http.Request) {
+		filename := strings.TrimPrefix(r.URL.Path, "/uploads/")
+		if filename == "" || strings.Contains(filename, "/") || strings.Contains(filename, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, filepath.Join(uploadsDir, filename))
 	})
 
 	staticFS, err := fs.Sub(webFS, "web")

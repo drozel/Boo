@@ -105,6 +105,9 @@ func (s *Store) UpdateResource(id string, patch Resource) (Resource, error) {
 			cur.Icon = patch.Icon
 		}
 		cur.Description = patch.Description
+		if patch.Links != nil {
+			cur.Links = patch.Links
+		}
 		if err := cur.validate(); err != nil {
 			return Resource{}, err
 		}
