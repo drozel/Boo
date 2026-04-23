@@ -10,7 +10,9 @@
       "Bash(docker exec *)",
       "Bash(docker port *)",
       "Bash(curl -v http://localhost:8181/)",
-      "Bash(lsof -nP -iTCP:8181 -sTCP:LISTEN)"
+      "Bash(lsof -nP -iTCP:8181 -sTCP:LISTEN)",
+      "Bash(go get *)",
+      "Bash(go mod *)"
     ]
   }
 }

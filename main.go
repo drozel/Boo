@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"image"
 	"image/png"
 	"io/fs"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	xdraw "golang.org/x/image/draw"
 )
 
 //go:embed web
@@ -42,6 +45,12 @@ func mapStoreError(err error) int {
 }
 
 const iconSize = 32
+
+func resizePNG(src image.Image, w, h int) image.Image {
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Over, nil)
+	return dst
+}
 
 func main() {
 	port := getenv("PORT", "8080")
