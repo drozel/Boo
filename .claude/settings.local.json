@@ -11,7 +11,8 @@
       "Bash(lsof -nP -iTCP:8181 -sTCP:LISTEN)",
       "Bash(go get *)",
       "Bash(go mod *)",
-      "Bash(xargs kill *)"
+      "Bash(xargs kill *)",
+      "Bash(curl -s http://localhost:8082/)"
     ]
   }
 }

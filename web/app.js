@@ -335,7 +335,16 @@ function bookingEl(b, res) {
   el.querySelector(".b-meta").textContent = `${fmtTime(b.start)} – ${fmtTime(b.end)}${b.note ? " · " + b.note : ""}`;
   el.addEventListener("click", (e) => {
     e.stopPropagation();
+    hideBookingTooltip();
     openBookingDialog({ booking: b });
+  });
+  el.addEventListener("mouseenter", () => {
+    clearTimeout(_tooltipTimer);
+    _tooltipTimer = setTimeout(() => showBookingTooltip(b, el), 350);
+  });
+  el.addEventListener("mouseleave", () => {
+    clearTimeout(_tooltipTimer);
+    hideBookingTooltip();
   });
   return el;
 }
@@ -570,6 +579,68 @@ function openLinkPopover(resource, anchor) {
       document.querySelector(".resource-list")?.removeEventListener("scroll", onScroll);
     };
   }, 0);
+}
+
+let _tooltipTimer = null;
+
+function getOrCreateTooltip() {
+  let tip = document.getElementById("booking-tooltip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "booking-tooltip";
+    tip.className = "booking-tooltip";
+    tip.hidden = true;
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function showBookingTooltip(b, anchor) {
+  const tip = getOrCreateTooltip();
+  tip.innerHTML = "";
+
+  const userEl = document.createElement("div");
+  userEl.className = "bt-user";
+  userEl.textContent = b.user;
+  tip.appendChild(userEl);
+
+  const co = b.coBookers && b.coBookers.length ? b.coBookers : [];
+  if (co.length) {
+    const coEl = document.createElement("div");
+    coEl.className = "bt-co";
+    coEl.textContent = "Also: " + co.join(", ");
+    tip.appendChild(coEl);
+  }
+
+  const timeEl = document.createElement("div");
+  timeEl.className = "bt-time";
+  timeEl.textContent = `${fmtTime(b.start)} – ${fmtTime(b.end)}`;
+  tip.appendChild(timeEl);
+
+  if (b.note) {
+    const noteEl = document.createElement("div");
+    noteEl.className = "bt-note";
+    noteEl.textContent = b.note;
+    tip.appendChild(noteEl);
+  }
+
+  tip.hidden = false;
+  tip.style.left = "0px";
+  tip.style.top = "0px";
+  const rect = anchor.getBoundingClientRect();
+  const tw = tip.offsetWidth;
+  const th = tip.offsetHeight;
+  let left = rect.left + rect.width / 2 - tw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+  let top = rect.top - th - 6;
+  if (top < 8) top = rect.bottom + 6;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function hideBookingTooltip() {
+  const tip = getOrCreateTooltip();
+  tip.hidden = true;
 }
 
 function positionPopover(pop, anchor) {
@@ -1082,6 +1153,7 @@ function init() {
     nameDialog.showModal();
   }
   loadState().then(scrollToNow);
+  connectSSE();
 
   // Refresh now-line periodically
   setInterval(() => {
@@ -1090,6 +1162,40 @@ function init() {
     const nowOffset = (Date.now() - state.viewStart) / HOUR_MS * hourWidth();
     line.style.left = `${nowOffset}px`;
   }, 60_000);
+}
+
+function connectSSE() {
+  const es = new EventSource("/api/events");
+
+  function normalizeBooking(b) {
+    return { ...b, start: new Date(b.start).getTime(), end: new Date(b.end).getTime() };
+  }
+
+  es.addEventListener("booking:add", (e) => {
+    const b = normalizeBooking(JSON.parse(e.data));
+    if (!state.bookings.some((x) => x.id === b.id)) {
+      state.bookings.push(b);
+      renderTimeline();
+    }
+  });
+
+  es.addEventListener("booking:update", (e) => {
+    const b = normalizeBooking(JSON.parse(e.data));
+    const idx = state.bookings.findIndex((x) => x.id === b.id);
+    if (idx >= 0) {
+      state.bookings[idx] = b;
+      renderTimeline();
+    }
+  });
+
+  es.addEventListener("booking:delete", (e) => {
+    const { id } = JSON.parse(e.data);
+    const idx = state.bookings.findIndex((x) => x.id === id);
+    if (idx >= 0) {
+      state.bookings.splice(idx, 1);
+      renderTimeline();
+    }
+  });
 }
 
 let navAnimating = false;

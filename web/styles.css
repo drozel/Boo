@@ -904,6 +904,28 @@ body[data-mode="week"] .row-grid {
 }
 .link-edit-hint:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Booking hover tooltip */
+.booking-tooltip {
+  position: fixed;
+  z-index: 40;
+  max-width: min(280px, calc(100vw - 16px));
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 10px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+  animation: popover-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.booking-tooltip[hidden] { display: none; }
+.bt-user { font-weight: 700; font-size: 13px; color: var(--fg); }
+.bt-co { font-size: 12px; color: var(--fg-muted); }
+.bt-time { font-size: 12px; color: var(--fg-muted); }
+.bt-note { font-size: 12px; color: var(--fg); border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; white-space: pre-wrap; }
+
 /* Toast */
 .toast {
   position: fixed;

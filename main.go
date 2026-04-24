@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"io/fs"
@@ -12,9 +13,45 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	xdraw "golang.org/x/image/draw"
 )
+
+type Broker struct {
+	mu      sync.Mutex
+	clients map[chan string]struct{}
+}
+
+func newBroker() *Broker {
+	return &Broker{clients: make(map[chan string]struct{})}
+}
+
+func (b *Broker) subscribe() chan string {
+	ch := make(chan string, 8)
+	b.mu.Lock()
+	b.clients[ch] = struct{}{}
+	b.mu.Unlock()
+	return ch
+}
+
+func (b *Broker) unsubscribe(ch chan string) {
+	b.mu.Lock()
+	delete(b.clients, ch)
+	b.mu.Unlock()
+}
+
+func (b *Broker) publish(event, data string) {
+	msg := "event: " + event + "\ndata: " + data + "\n\n"
+	b.mu.Lock()
+	for ch := range b.clients {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+	b.mu.Unlock()
+}
 
 //go:embed web
 var webFS embed.FS
@@ -61,6 +98,8 @@ func main() {
 		log.Fatalf("store init failed: %v", err)
 	}
 
+	broker := newBroker()
+
 	uploadsDir := filepath.Join(filepath.Dir(dataFile), "icons")
 	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 		log.Fatalf("uploads dir: %v", err)
@@ -70,6 +109,33 @@ func main() {
 
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, store.Snapshot())
+	})
+
+	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+		ch := broker.subscribe()
+		defer broker.unsubscribe(ch)
+
+		fmt.Fprintf(w, ": connected\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		for {
+			select {
+			case msg := <-ch:
+				fmt.Fprint(w, msg)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			case <-r.Context().Done():
+				return
+			}
+		}
 	})
 
 	mux.HandleFunc("POST /api/resources", func(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +246,9 @@ func main() {
 			writeErr(w, mapStoreError(err), err.Error())
 			return
 		}
+		if data, jerr := json.Marshal(created); jerr == nil {
+			broker.publish("booking:add", string(data))
+		}
 		writeJSON(w, http.StatusCreated, created)
 	})
 
@@ -195,6 +264,9 @@ func main() {
 			writeErr(w, mapStoreError(err), err.Error())
 			return
 		}
+		if data, jerr := json.Marshal(updated); jerr == nil {
+			broker.publish("booking:update", string(data))
+		}
 		writeJSON(w, http.StatusOK, updated)
 	})
 
@@ -204,6 +276,7 @@ func main() {
 			writeErr(w, mapStoreError(err), err.Error())
 			return
 		}
+		broker.publish("booking:delete", `{"id":"`+id+`"}`)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
