@@ -86,6 +86,21 @@ func main() {
 		writeJSON(w, http.StatusCreated, created)
 	})
 
+	mux.HandleFunc("POST /api/resources/order", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			IDs []string `json:"ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if err := store.ReorderResources(body.IDs); err != nil {
+			writeErr(w, mapStoreError(err), err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("PATCH /api/resources/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		var patch Resource
@@ -146,7 +161,7 @@ func main() {
 		f.Close()
 
 		iconURL := "/uploads/" + id + ".png"
-		updated, err := store.UpdateResource(id, Resource{Icon: iconURL})
+		updated, err := store.SetResourceIcon(id, iconURL)
 		if err != nil {
 			writeErr(w, mapStoreError(err), err.Error())
 			return

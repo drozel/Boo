@@ -120,6 +120,22 @@ func (s *Store) UpdateResource(id string, patch Resource) (Resource, error) {
 	return Resource{}, ErrNotFound
 }
 
+func (s *Store) SetResourceIcon(id, icon string) (Resource, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.state.Resources {
+		if s.state.Resources[i].ID != id {
+			continue
+		}
+		s.state.Resources[i].Icon = icon
+		if err := s.persistLocked(); err != nil {
+			return Resource{}, err
+		}
+		return s.state.Resources[i], nil
+	}
+	return Resource{}, ErrNotFound
+}
+
 func (s *Store) DeleteResource(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -141,6 +157,31 @@ func (s *Store) DeleteResource(id string) error {
 		}
 	}
 	s.state.Bookings = kept
+	return s.persistLocked()
+}
+
+func (s *Store) ReorderResources(ids []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(ids) != len(s.state.Resources) {
+		return errors.New("ids must match existing resources")
+	}
+	pos := make(map[string]int, len(ids))
+	for i, id := range ids {
+		if _, dup := pos[id]; dup {
+			return errors.New("duplicate id")
+		}
+		pos[id] = i
+	}
+	reordered := make([]Resource, len(s.state.Resources))
+	for _, r := range s.state.Resources {
+		i, ok := pos[r.ID]
+		if !ok {
+			return ErrNotFound
+		}
+		reordered[i] = r
+	}
+	s.state.Resources = reordered
 	return s.persistLocked()
 }
 

@@ -1,9 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:docs.bmad-method.org)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(curl -s http://localhost:8080/)",
       "Bash(go build *)",
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8181/)",
       "Bash(curl -sS http://localhost:8181/)",
@@ -12,7 +10,8 @@
       "Bash(curl -v http://localhost:8181/)",
       "Bash(lsof -nP -iTCP:8181 -sTCP:LISTEN)",
       "Bash(go get *)",
-      "Bash(go mod *)"
+      "Bash(go mod *)",
+      "Bash(xargs kill *)"
     ]
   }
 }

@@ -1,4 +1,5 @@
 // Boo — resource availability calendar (vanilla ES module)
+import Sortable from "https://esm.sh/sortablejs@1.15.6";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -31,6 +32,8 @@ const state = {
   editingResourceId: null,
   editingBookingId: null,
   bookingDefaults: null,
+  sortMode: false,
+  sortable: null,
 };
 
 // ---------- utilities ----------
@@ -133,12 +136,24 @@ function renderRangeLabel() {
   label.textContent = daysVisible() === 1 ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
 }
 
+function isResourceBusy(resourceId) {
+  const now = Date.now();
+  return state.bookings.some(b => b.resourceId === resourceId && b.start <= now && b.end > now);
+}
+
 function renderResources() {
+  // Tear down any existing Sortable before replacing the DOM
+  if (state.sortable) {
+    state.sortable.destroy();
+    state.sortable = null;
+  }
+
   const list = document.getElementById("resource-list");
   list.innerHTML = "";
   for (const r of state.resources) {
     const li = document.createElement("li");
     li.className = "resource-item";
+    if (isResourceBusy(r.id)) li.classList.add("resource-item--busy");
     li.dataset.id = r.id;
     li.dataset.name = r.name;
     const swatchHTML = (r.icon && r.icon.startsWith("/"))
@@ -148,6 +163,9 @@ function renderResources() {
     const linkClass = linkCount ? "link-hint has-links" : "link-hint";
     const linkTitle = linkCount ? `${linkCount} link${linkCount === 1 ? "" : "s"}` : "No links — click to add";
     li.innerHTML = `
+      <button type="button" class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">
+        <svg class="icon"><use href="#i-grip"/></svg>
+      </button>
       ${swatchHTML}
       <span class="meta">
         <span class="name"></span>
@@ -163,10 +181,37 @@ function renderResources() {
       openResourceDialog(r);
     });
     li.addEventListener("click", (e) => {
+      if (state.sortMode) return;
       if (e.target.closest(".edit")) return;
+      if (e.target.closest(".drag-handle")) return;
       openLinkPopover(r, li);
     });
     list.appendChild(li);
+  }
+
+  if (state.sortMode) {
+    state.sortable = Sortable.create(list, {
+      animation: 180,
+      handle: ".drag-handle",
+      ghostClass: "resource-item--ghost",
+      dragClass: "resource-item--drag",
+      forceFallback: true,
+      fallbackTolerance: 4,
+      onEnd: async (evt) => {
+        if (evt.oldIndex === evt.newIndex) return;
+        const ids = [...list.querySelectorAll(".resource-item")].map((el) => el.dataset.id);
+        const prev = state.resources.slice();
+        state.resources = ids.map((id) => prev.find((r) => r.id === id)).filter(Boolean);
+        renderTimeline(); // sync row order immediately
+        try {
+          await api("POST", "/api/resources/order", { ids });
+        } catch (err) {
+          toast(err.message);
+          state.resources = prev;
+          render();
+        }
+      },
+    });
   }
 }
 
@@ -422,10 +467,21 @@ function openResourceDialog(resource) {
   setTimeout(() => form.name.focus(), 40);
 }
 
+let linkSortable = null;
+
 function renderLinkRows(links) {
+  if (linkSortable) { linkSortable.destroy(); linkSortable = null; }
   const ul = document.getElementById("link-rows");
   ul.innerHTML = "";
   for (const l of links) addLinkRow(l.url, l.text);
+  linkSortable = Sortable.create(ul, {
+    animation: 180,
+    handle: ".link-drag",
+    ghostClass: "link-row--ghost",
+    dragClass: "link-row--drag",
+    forceFallback: true,
+    fallbackTolerance: 4,
+  });
 }
 
 function addLinkRow(url = "", text = "") {
@@ -433,6 +489,9 @@ function addLinkRow(url = "", text = "") {
   const li = document.createElement("li");
   li.className = "link-row";
   li.innerHTML = `
+    <button type="button" class="icon-btn ghost link-drag" aria-label="Drag to reorder" title="Drag to reorder">
+      <svg class="icon"><use href="#i-grip"/></svg>
+    </button>
     <input class="link-text" placeholder="Label" maxlength="80" />
     <input class="link-url" type="text" placeholder="https://…" maxlength="500" />
     <button type="button" class="icon-btn ghost link-remove" aria-label="Remove link">
@@ -539,17 +598,192 @@ function renderSwatches(selected) {
   const el = document.getElementById("color-swatches");
   el.innerHTML = "";
   el.dataset.selected = selected;
+  closeColorPicker();
+  const isCustom = !PALETTE.includes(selected);
+
   for (const color of PALETTE) {
     const b = document.createElement("button");
     b.type = "button";
+    b.className = "swatch-color";
     b.style.setProperty("--sw", color);
-    b.setAttribute("aria-pressed", String(color === selected));
+    b.setAttribute("aria-pressed", String(!isCustom && color === selected));
     b.addEventListener("click", () => {
       el.dataset.selected = color;
-      el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      closeColorPicker();
+      el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+      const custom = el.querySelector(".swatch-custom");
+      custom.classList.remove("has-color");
+      custom.style.removeProperty("--sw");
     });
     el.appendChild(b);
   }
+
+  const custom = document.createElement("button");
+  custom.type = "button";
+  custom.className = "swatch-custom";
+  custom.title = "Custom color";
+  if (isCustom) {
+    custom.style.setProperty("--sw", selected);
+    custom.classList.add("has-color");
+    custom.setAttribute("aria-pressed", "true");
+  } else {
+    custom.setAttribute("aria-pressed", "false");
+  }
+  custom.addEventListener("click", () => {
+    if (document.getElementById("color-picker-host").firstChild) {
+      closeColorPicker();
+    } else {
+      openColorPicker(el.dataset.selected);
+    }
+  });
+  el.appendChild(custom);
+}
+
+// ---------- color picker ----------
+
+function hexToRgb(hex) {
+  const m = String(hex).replace("#", "").match(/^([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map((n) => Math.round(clamp(n, 0, 255)).toString(16).padStart(2, "0")).join("");
+}
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+  }
+  h *= 60;
+  if (h < 0) h += 360;
+  return { h, s: max ? d / max : 0, v: max };
+}
+function hsvToHex(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return rgbToHex((r + m) * 255, (g + m) * 255, (b + m) * 255);
+}
+function hexToHsv(hex) {
+  const rgb = hexToRgb(hex) || { r: 99, g: 102, b: 241 };
+  return rgbToHsv(rgb.r, rgb.g, rgb.b);
+}
+
+function openColorPicker(initial) {
+  const host = document.getElementById("color-picker-host");
+  host.innerHTML = "";
+  let { h, s, v } = hexToHsv(initial);
+
+  const root = document.createElement("div");
+  root.className = "color-picker";
+  root.innerHTML = `
+    <div class="cp-sv">
+      <div class="cp-sv-thumb"></div>
+    </div>
+    <div class="cp-hue">
+      <div class="cp-hue-thumb"></div>
+    </div>
+    <div class="cp-row">
+      <span class="cp-preview"></span>
+      <span class="cp-hash">#</span>
+      <input type="text" class="cp-hex" maxlength="6" autocomplete="off" spellcheck="false" />
+    </div>
+  `;
+  const sv = root.querySelector(".cp-sv");
+  const svThumb = root.querySelector(".cp-sv-thumb");
+  const hue = root.querySelector(".cp-hue");
+  const hueThumb = root.querySelector(".cp-hue-thumb");
+  const preview = root.querySelector(".cp-preview");
+  const hexInput = root.querySelector(".cp-hex");
+
+  function paint() {
+    const hex = hsvToHex(h, s, v);
+    sv.style.setProperty("--cp-h", h);
+    svThumb.style.left = `${s * 100}%`;
+    svThumb.style.top = `${(1 - v) * 100}%`;
+    svThumb.style.background = hex;
+    hueThumb.style.left = `${(h / 360) * 100}%`;
+    hueThumb.style.background = `hsl(${h} 100% 50%)`;
+    preview.style.background = hex;
+    if (document.activeElement !== hexInput) {
+      hexInput.value = hex.slice(1).toUpperCase();
+    }
+    return hex;
+  }
+
+  function commit() {
+    const hex = paint();
+    const wrap = document.getElementById("color-swatches");
+    wrap.dataset.selected = hex;
+    wrap.querySelectorAll(".swatch-color").forEach((b) => b.setAttribute("aria-pressed", "false"));
+    const custom = wrap.querySelector(".swatch-custom");
+    custom.style.setProperty("--sw", hex);
+    custom.classList.add("has-color");
+    custom.setAttribute("aria-pressed", "true");
+  }
+
+  function attachDrag(el, onMove) {
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch {}
+      onMove(e);
+      const move = (ev) => onMove(ev);
+      const up = (ev) => {
+        try { el.releasePointerCapture(ev.pointerId); } catch {}
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    });
+  }
+
+  attachDrag(sv, (e) => {
+    const r = sv.getBoundingClientRect();
+    s = clamp((e.clientX - r.left) / r.width, 0, 1);
+    v = clamp(1 - (e.clientY - r.top) / r.height, 0, 1);
+    commit();
+  });
+  attachDrag(hue, (e) => {
+    const r = hue.getBoundingClientRect();
+    h = clamp((e.clientX - r.left) / r.width, 0, 1) * 360;
+    commit();
+  });
+  hexInput.addEventListener("input", () => {
+    const cleaned = hexInput.value.replace(/[^0-9a-f]/gi, "").slice(0, 6);
+    if (cleaned.length === 6) {
+      const hsv = hexToHsv("#" + cleaned);
+      h = hsv.h; s = hsv.s; v = hsv.v;
+      commit();
+    }
+  });
+  hexInput.addEventListener("blur", () => paint());
+
+  paint();
+  host.appendChild(root);
+  setTimeout(() => hexInput.focus({ preventScroll: true }), 30);
+}
+
+function closeColorPicker() {
+  const host = document.getElementById("color-picker-host");
+  if (host) host.innerHTML = "";
 }
 
 function renderIconPicker(selected) {
@@ -796,6 +1030,13 @@ function init() {
   });
 
   // Resources
+  document.getElementById("sort-toggle").addEventListener("click", () => {
+    state.sortMode = !state.sortMode;
+    document.body.dataset.sortMode = String(state.sortMode);
+    document.getElementById("sort-toggle").setAttribute("aria-pressed", String(state.sortMode));
+    closeLinkPopover();
+    renderResources(); // destroys/creates Sortable and refreshes drag handles
+  });
   document.getElementById("add-resource").addEventListener("click", () => openResourceDialog(null));
   document.getElementById("empty-add").addEventListener("click", () => openResourceDialog(null));
   document.getElementById("resource-form").addEventListener("submit", submitResource);
