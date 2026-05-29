@@ -63,6 +63,12 @@ function fmtLocalInput(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 function parseLocalInput(s) { return new Date(s).getTime(); }
+function fmtDateInput(ts) {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function endOfDay(ts) { const d = new Date(ts); d.setHours(23, 59, 0, 0); return d.getTime(); }
 function snap(ts) { return Math.round(ts / SNAP_MS) * SNAP_MS; }
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 function hourWidth() {
@@ -332,7 +338,9 @@ function bookingEl(b, res) {
     <span class="b-meta"></span>
   `;
   el.querySelector(".b-name").textContent = b.user;
-  el.querySelector(".b-meta").textContent = `${fmtTime(b.start)} – ${fmtTime(b.end)}${b.note ? " · " + b.note : ""}`;
+  el.querySelector(".b-meta").textContent = b.fullDay
+    ? `All day${b.note ? " · " + b.note : ""}`
+    : `${fmtTime(b.start)} – ${fmtTime(b.end)}${b.note ? " · " + b.note : ""}`;
   el.addEventListener("click", (e) => {
     e.stopPropagation();
     hideBookingTooltip();
@@ -447,10 +455,25 @@ function openBookingDialog({ booking, resourceId, start, end } = {}) {
   badge.dataset.resourceId = res.id;
 
   form.user.value = isEdit ? booking.user : state.user;
-  form.start.value = fmtLocalInput(isEdit ? booking.start : start);
-  form.end.value = fmtLocalInput(isEdit ? booking.end : end);
   form.note.value = isEdit ? (booking.note || "") : "";
   renderChips(isEdit ? (booking.coBookers || []) : []);
+
+  const fdCb = document.getElementById("booking-fullday");
+  const isFullDay = isEdit ? (booking.fullDay || false) : false;
+  fdCb.checked = isFullDay;
+  const startTs = isEdit ? booking.start : start;
+  const endTs = isEdit ? booking.end : end;
+  if (isFullDay) {
+    form.start.type = "date";
+    form.end.type = "date";
+    form.start.value = fmtDateInput(startTs);
+    form.end.value = fmtDateInput(endTs);
+  } else {
+    form.start.type = "datetime-local";
+    form.end.type = "datetime-local";
+    form.start.value = fmtLocalInput(startTs);
+    form.end.value = fmtLocalInput(endTs);
+  }
 
   dialog.showModal();
   setTimeout(() => form.user.focus(), 40);
@@ -614,7 +637,11 @@ function showBookingTooltip(b, anchor) {
 
   const timeEl = document.createElement("div");
   timeEl.className = "bt-time";
-  timeEl.textContent = `${fmtTime(b.start)} – ${fmtTime(b.end)}`;
+  timeEl.textContent = b.fullDay
+    ? (fmtDate(b.start) === fmtDate(b.end)
+      ? `All day · ${fmtDate(b.start)}`
+      : `All day · ${fmtDate(b.start)} – ${fmtDate(b.end)}`)
+    : `${fmtTime(b.start)} – ${fmtTime(b.end)}`;
   tip.appendChild(timeEl);
 
   if (b.note) {
@@ -984,13 +1011,19 @@ async function submitBooking(e) {
   const entry = document.getElementById("cobooker-entry");
   if (entry.value.trim()) { addChip(entry.value.trim()); entry.value = ""; }
   const resourceId = document.getElementById("booking-resource-badge").dataset.resourceId;
+  const isFullDay = document.getElementById("booking-fullday").checked;
   const body = {
     resourceId,
     user: form.user.value.trim(),
     coBookers: getChips(),
-    start: new Date(parseLocalInput(form.start.value)).toISOString(),
-    end: new Date(parseLocalInput(form.end.value)).toISOString(),
+    start: isFullDay
+      ? new Date(`${form.start.value}T00:00`).toISOString()
+      : new Date(parseLocalInput(form.start.value)).toISOString(),
+    end: isFullDay
+      ? new Date(`${form.end.value}T23:59`).toISOString()
+      : new Date(parseLocalInput(form.end.value)).toISOString(),
     note: form.note.value.trim(),
+    fullDay: isFullDay || undefined,
   };
   try {
     if (state.editingBookingId) {
@@ -1117,6 +1150,24 @@ function init() {
   // Bookings
   document.getElementById("booking-form").addEventListener("submit", submitBooking);
   document.getElementById("booking-delete").addEventListener("click", deleteBooking);
+  document.getElementById("booking-fullday").addEventListener("change", function () {
+    const form = document.getElementById("booking-form");
+    if (this.checked) {
+      const startTs = parseLocalInput(form.start.value) || Date.now();
+      const endTs = parseLocalInput(form.end.value) || Date.now();
+      form.start.type = "date";
+      form.end.type = "date";
+      form.start.value = fmtDateInput(startTs);
+      form.end.value = fmtDateInput(endTs);
+    } else {
+      const startDate = form.start.value;
+      const endDate = form.end.value;
+      form.start.type = "datetime-local";
+      form.end.type = "datetime-local";
+      form.start.value = `${startDate}T00:00`;
+      form.end.value = `${endDate}T23:59`;
+    }
+  });
   document.getElementById("fab").addEventListener("click", () => {
     if (!state.resources.length) { openResourceDialog(null); return; }
     const now = snap(Date.now());

@@ -30,6 +30,7 @@ type Booking struct {
 	Start      time.Time `json:"start"`
 	End        time.Time `json:"end"`
 	Note       string    `json:"note,omitempty"`
+	FullDay    bool      `json:"fullDay,omitempty"`
 }
 
 type State struct {
