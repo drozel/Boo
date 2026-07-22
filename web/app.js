@@ -299,7 +299,10 @@ function renderTimeline() {
     const bookings = state.bookings.filter((b) => b.resourceId === res.id);
     for (const b of bookings) {
       const el = bookingEl(b, res);
-      if (el) row.appendChild(el);
+      if (el) {
+        row.appendChild(el);
+        attachBookingDrag(el, b, res, row);
+      }
     }
     attachRowInteractions(row, res);
     body.appendChild(row);
@@ -336,16 +339,13 @@ function bookingEl(b, res) {
   el.innerHTML = `
     <span class="b-user"><span class="b-name"></span>${plus}</span>
     <span class="b-meta"></span>
+    <span class="b-handle b-handle-l"></span>
+    <span class="b-handle b-handle-r"></span>
   `;
   el.querySelector(".b-name").textContent = b.user;
   el.querySelector(".b-meta").textContent = b.fullDay
     ? `All day${b.note ? " · " + b.note : ""}`
     : `${fmtTime(b.start)} – ${fmtTime(b.end)}${b.note ? " · " + b.note : ""}`;
-  el.addEventListener("click", (e) => {
-    e.stopPropagation();
-    hideBookingTooltip();
-    openBookingDialog({ booking: b });
-  });
   el.addEventListener("mouseenter", () => {
     clearTimeout(_tooltipTimer);
     _tooltipTimer = setTimeout(() => showBookingTooltip(b, el), 350);
@@ -355,6 +355,15 @@ function bookingEl(b, res) {
     hideBookingTooltip();
   });
   return el;
+}
+
+function formatBookingRange(start, end, fullDay) {
+  if (fullDay) {
+    return fmtDate(start) === fmtDate(end)
+      ? `${fmtDate(start)} (all day)`
+      : `${fmtDate(start)} – ${fmtDate(end)}`;
+  }
+  return `${fmtDate(start)} ${fmtTime(start)} – ${fmtTime(end)}`;
 }
 
 // ---------- row interactions: click + drag to create ----------
@@ -415,6 +424,120 @@ function attachRowInteractions(row, res) {
   };
   surface.addEventListener("pointerup", endDrag);
   surface.addEventListener("pointercancel", endDrag);
+}
+
+const DRAG_MOVE_THRESHOLD_PX = 4;
+
+function attachBookingDrag(el, b, res, row) {
+  const startHandle = el.querySelector(".b-handle-l");
+  const endHandle = el.querySelector(".b-handle-r");
+
+  const beginDrag = (e, kind) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    clearTimeout(_tooltipTimer);
+    hideBookingTooltip();
+
+    const startClientX = e.clientX;
+    const origStart = b.start;
+    const origEnd = b.end;
+    let curStart = origStart;
+    let curEnd = origEnd;
+    let moved = false;
+
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("booking--dragging");
+
+    const onMove = (ev) => {
+      const dxPx = ev.clientX - startClientX;
+      if (Math.abs(dxPx) >= DRAG_MOVE_THRESHOLD_PX) moved = true;
+      const dMs = (dxPx / hourWidth()) * HOUR_MS;
+
+      if (b.fullDay) {
+        const dayDelta = Math.round(dMs / DAY_MS);
+        if (kind === "resize-start") {
+          curStart = Math.min(startOfDay(origStart + dayDelta * DAY_MS), origEnd - DAY_MS);
+        } else if (kind === "resize-end") {
+          curEnd = Math.max(endOfDay(origEnd + dayDelta * DAY_MS), origStart + DAY_MS);
+        } else {
+          curStart = origStart + dayDelta * DAY_MS;
+          curEnd = origEnd + dayDelta * DAY_MS;
+        }
+      } else {
+        if (kind === "resize-start") {
+          curStart = clamp(snap(origStart + dMs), state.viewStart, origEnd - SNAP_MS);
+        } else if (kind === "resize-end") {
+          curEnd = clamp(snap(origEnd + dMs), origStart + SNAP_MS, viewEnd());
+        } else {
+          const snappedDelta = Math.round(dMs / SNAP_MS) * SNAP_MS;
+          curStart = origStart + snappedDelta;
+          curEnd = origEnd + snappedDelta;
+          if (curStart < state.viewStart) {
+            curEnd += state.viewStart - curStart;
+            curStart = state.viewStart;
+          }
+          if (curEnd > viewEnd()) {
+            curStart -= curEnd - viewEnd();
+            curEnd = viewEnd();
+          }
+        }
+      }
+
+      const left = (curStart - state.viewStart) / HOUR_MS * hourWidth();
+      const width = Math.max((curEnd - curStart) / HOUR_MS * hourWidth(), 18);
+      el.style.left = `${left}px`;
+      el.style.width = `${width}px`;
+      el.querySelector(".b-meta").textContent = formatBookingRange(curStart, curEnd, b.fullDay);
+    };
+
+    const onUp = async (ev) => {
+      try { el.releasePointerCapture(ev.pointerId); } catch {}
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      el.classList.remove("booking--dragging");
+
+      if (!moved) {
+        if (kind === "move") openBookingDialog({ booking: b });
+        return;
+      }
+      if (curStart === origStart && curEnd === origEnd) {
+        renderTimeline(); // restore normal label (live preview drops the note)
+        return;
+      }
+
+      const verb = kind === "move" ? "Move" : "Resize";
+      const label = formatBookingRange(curStart, curEnd, b.fullDay);
+      if (!confirm(`${verb} ${b.user}'s booking on ${res.name} to ${label}?`)) {
+        renderTimeline();
+        return;
+      }
+
+      try {
+        await api("PATCH", `/api/bookings/${b.id}`, {
+          start: new Date(curStart).toISOString(),
+          end: new Date(curEnd).toISOString(),
+        });
+        toast("Booking updated");
+        await loadState();
+      } catch (err) {
+        toast(err.status === 409 ? "That slot overlaps an existing booking." : err.message);
+        renderTimeline();
+      }
+    };
+
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+  };
+
+  startHandle.addEventListener("pointerdown", (e) => beginDrag(e, "resize-start"));
+  endHandle.addEventListener("pointerdown", (e) => beginDrag(e, "resize-end"));
+  el.addEventListener("pointerdown", (e) => {
+    if (e.target === startHandle || e.target === endHandle) return;
+    beginDrag(e, "move");
+  });
 }
 
 // ---------- dialogs ----------

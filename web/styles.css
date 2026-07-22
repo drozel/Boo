@@ -426,7 +426,9 @@ body[data-mode="week"] .row-grid {
   padding: 6px 8px 6px 10px;
   font-size: 12px;
   overflow: hidden;
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -436,7 +438,29 @@ body[data-mode="week"] .row-grid {
   transition: transform 120ms, box-shadow 120ms;
 }
 .booking:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); z-index: 1; }
+.booking:active { cursor: grabbing; }
 .booking.leaving { animation: booking-out 160ms forwards; }
+.booking.booking--dragging {
+  z-index: 2;
+  opacity: 0.92;
+  box-shadow: var(--shadow-md);
+  transition: none;
+}
+
+.b-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.b-handle-l { left: 0; }
+.b-handle-r { right: 0; }
+.b-handle:hover, .booking--dragging .b-handle {
+  background: color-mix(in oklab, #fff 25%, transparent);
+}
 .booking .b-user { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
 .booking .b-plus {
   font-size: 10px;
