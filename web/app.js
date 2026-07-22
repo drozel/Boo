@@ -1328,6 +1328,7 @@ function init() {
   }
   loadState().then(scrollToNow);
   connectSSE();
+  loadBuildInfo();
 
   // Refresh now-line periodically
   setInterval(() => {
@@ -1336,6 +1337,33 @@ function init() {
     const nowOffset = (Date.now() - state.viewStart) / HOUR_MS * hourWidth();
     line.style.left = `${nowOffset}px`;
   }, 60_000);
+}
+
+// ---------- statusbar ----------
+
+async function loadBuildInfo() {
+  let info;
+  try {
+    info = await api("GET", "/api/version");
+  } catch {
+    return; // status bar just keeps its static repo link
+  }
+
+  const link = document.getElementById("repo-link");
+  if (info.repoUrl) {
+    link.href = info.repoUrl;
+    try {
+      const u = new URL(info.repoUrl);
+      document.getElementById("repo-label").textContent = u.host + u.pathname.replace(/\/$/, "");
+    } catch {}
+  }
+
+  const el = document.getElementById("build-info");
+  const date = info.date ? new Date(info.date) : null;
+  const built = date && date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  el.textContent = built ? `${info.commit} · ${built}` : info.commit;
+  el.title = date ? `Built ${date.toLocaleString()} from ${info.commit}` : `Build ${info.commit}`;
+  el.hidden = false;
 }
 
 function connectSSE() {

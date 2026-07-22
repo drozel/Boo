@@ -8,7 +8,15 @@ COPY go.mod ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/boo . && \
+
+# .dockerignore keeps .git out of the context, so there's no VCS stamp to read —
+# the version shown in the UI has to be passed in.
+ARG COMMIT=""
+ARG BUILD_DATE=""
+
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags="-s -w -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
+      -o /out/boo . && \
     mkdir /data
 
 FROM gcr.io/distroless/static-debian12:nonroot

@@ -5,12 +5,19 @@ vars:
   CONTAINER: boo
   VOLUME: boo-data
   PORT: 8181
+  COMMIT:
+    sh: git rev-parse --short=7 HEAD 2>/dev/null || echo ""
+  BUILD_DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
 
 tasks:
   build:
     desc: Build the Docker image
     cmds:
-      - docker build -t {{.IMAGE}} .
+      - docker build
+          --build-arg COMMIT={{.COMMIT}}
+          --build-arg BUILD_DATE={{.BUILD_DATE}}
+          -t {{.IMAGE}} .
 
   run:
     desc: Run the container locally with a named volume

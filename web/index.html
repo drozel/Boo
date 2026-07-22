@@ -28,6 +28,7 @@
         <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h4l1.5-2h5L16 8h4v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
         <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
         <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1.5 1.5M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1.5-1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-git" viewBox="0 0 24 24"><circle cx="7" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="19" r="2.4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 7.4v9.2M17 11.4c0 3-2.6 4.4-5.6 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
         <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4" fill="currentColor"/><circle cx="15" cy="6" r="1.4" fill="currentColor"/><circle cx="9" cy="12" r="1.4" fill="currentColor"/><circle cx="15" cy="12" r="1.4" fill="currentColor"/><circle cx="9" cy="18" r="1.4" fill="currentColor"/><circle cx="15" cy="18" r="1.4" fill="currentColor"/></symbol>
       </defs>
     </svg>
@@ -84,6 +85,14 @@
         </div>
       </section>
     </main>
+
+    <footer class="statusbar">
+      <a id="repo-link" class="statusbar-link" href="https://github.com/drozel/Boo" target="_blank" rel="noopener noreferrer">
+        <svg class="icon icon-sm"><use href="#i-git"/></svg><span id="repo-label">Source</span>
+      </a>
+      <span class="spacer"></span>
+      <span id="build-info" class="statusbar-build" hidden></span>
+    </footer>
 
     <button id="fab" class="fab" aria-label="New booking"><svg class="icon"><use href="#i-plus"/></svg></button>
 
